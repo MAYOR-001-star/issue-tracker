@@ -1,5 +1,6 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { AgentLevel, Prisma, PrismaClient } from "@prisma/client";
 import { reviewerConflict, reviewerCreditConflict, type ReviewedBug } from "@/lib/agents/independence";
+import { hasLevel } from "@/lib/agents/levels";
 import { workflowFor } from "@/lib/workflow";
 import { DEFAULT_PROJECT_WORKFLOW } from "@/lib/workflow-config";
 import { WORK_READINESS_VOTE_THRESHOLD } from "@/lib/ticket-assignment";
@@ -77,6 +78,14 @@ export function issueStage(input: {
 
 type AcceptingReview = { id: string; agentId: string; ownerUserId: string; onBehalfOfUserId?: string };
 
+export type TriageClearance = {
+  id: string;
+  agentId: string;
+  onBehalfOfUserId?: string;
+  createdAt: Date;
+  agent: { id: string; ownerUserId: string; level: string };
+};
+
 /** Distinct independent owners who accepted the issue as real. */
 export function confirmationCount(input: {
   createdByAgentId: string | null;
@@ -103,6 +112,40 @@ export function isConfirmedCount(
 }
 
 /**
+ * Checks whether an independent triager-level agent cleared the issue as not a duplicate.
+ */
+export function isTriageClearedBug(input: {
+  createdByAgentId: string | null;
+  clears: readonly TriageClearance[];
+  undoneIds: ReadonlySet<string>;
+  bug: ReviewedBug;
+  revisedAt?: Date;
+}): boolean {
+  for (const clear of input.clears) {
+    if (input.revisedAt && clear.createdAt <= input.revisedAt) continue;
+    if (input.createdByAgentId && clear.agentId === input.createdByAgentId) continue;
+    if (!hasLevel(clear.agent.level as AgentLevel, "triager")) continue;
+    if (reviewerConflict({ id: clear.agentId, ownerUserId: clear.agent.ownerUserId }, input.bug)) continue;
+    if (reviewerCreditConflict(clear.onBehalfOfUserId ?? clear.agent.ownerUserId, input.bug)) continue;
+    if (input.undoneIds.has(clear.id)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Shared confirmation predicate: requires required independent reviewer acceptances
+ * AND a triager clearance that it is not a duplicate.
+ */
+export function isIssueConfirmed(input: {
+  confirmationCount: number;
+  confirmationsNeeded?: number;
+  triageCleared: boolean;
+}): boolean {
+  return isConfirmedCount(input.confirmationCount, input.confirmationsNeeded) && input.triageCleared;
+}
+
+/**
  * Stage of every open issue matching `where`. A missing validation table
  * leaves the map empty so the list still renders.
  */
@@ -110,6 +153,9 @@ export async function openIssueStages(
   db: PrismaClient,
   where: Prisma.BugWhereInput,
 ): Promise<Map<string, IssueStage>> {
+  const stages = new Map<string, IssueStage>();
+  if (!db?.bug?.findMany) return stages;
+
   const bugs = await db.bug.findMany({
     where: { ...where, status: "open", isDeleted: false },
     select: {
@@ -128,7 +174,6 @@ export async function openIssueStages(
       },
     },
   });
-  const stages = new Map<string, IssueStage>();
   if (bugs.length === 0) return stages;
 
   const ids = bugs.map((bug) => bug.id);
@@ -142,14 +187,22 @@ export async function openIssueStages(
       select: { bugId: true, editedAt: true },
     }),
     db.issueValidation.findMany({
-      where: { bugId: { in: ids }, kind: "real", verdict: "accept" },
+      where: {
+        bugId: { in: ids },
+        OR: [
+          { kind: "real", verdict: "accept" },
+          { kind: "duplicate", verdict: "reject" },
+        ],
+      },
       select: {
         id: true,
         bugId: true,
+        kind: true,
+        verdict: true,
         createdAt: true,
         agentId: true,
         onBehalfOfUserId: true,
-        agent: { select: { ownerUserId: true } },
+        agent: { select: { id: true, ownerUserId: true, level: true } },
       },
     }),
     db.agentAuditEvent.findMany({
@@ -172,17 +225,34 @@ export async function openIssueStages(
     undoneByBug.set(event.bugId, set);
   }
   const acceptsByBug = new Map<string, AcceptingReview[]>();
+  const clearsByBug = new Map<string, TriageClearance[]>();
   for (const validation of validations) {
     const cutoff = revisedAt.get(validation.bugId);
     if (cutoff && validation.createdAt <= cutoff) continue;
-    const list = acceptsByBug.get(validation.bugId) ?? [];
-    list.push({
-      id: validation.id,
-      agentId: validation.agentId,
-      ownerUserId: validation.agent.ownerUserId,
-      onBehalfOfUserId: validation.onBehalfOfUserId,
-    });
-    acceptsByBug.set(validation.bugId, list);
+    if (validation.kind === "real" && validation.verdict === "accept") {
+      const list = acceptsByBug.get(validation.bugId) ?? [];
+      list.push({
+        id: validation.id,
+        agentId: validation.agentId,
+        ownerUserId: validation.agent.ownerUserId,
+        onBehalfOfUserId: validation.onBehalfOfUserId,
+      });
+      acceptsByBug.set(validation.bugId, list);
+    } else if (validation.kind === "duplicate" && validation.verdict === "reject") {
+      const list = clearsByBug.get(validation.bugId) ?? [];
+      list.push({
+        id: validation.id,
+        agentId: validation.agentId,
+        onBehalfOfUserId: validation.onBehalfOfUserId,
+        createdAt: validation.createdAt,
+        agent: {
+          id: validation.agent.id,
+          ownerUserId: validation.agent.ownerUserId,
+          level: validation.agent.level,
+        },
+      });
+      clearsByBug.set(validation.bugId, list);
+    }
   }
 
   for (const bug of bugs) {
@@ -193,15 +263,24 @@ export async function openIssueStages(
       createdByAgent: bug.createdByAgent,
       claims: bug.claims,
     };
-    const confirmed = isConfirmedCount(
-      confirmationCount({
-        createdByAgentId: bug.createdByAgentId,
-        accepts: acceptsByBug.get(bug.id) ?? [],
-        undoneIds: undoneByBug.get(bug.id) ?? new Set(),
-        bug: reviewed,
-      }),
-      workflows.get(bug.projectId)?.confirmationsNeeded ?? DEFAULT_PROJECT_WORKFLOW.confirmationsNeeded,
-    );
+    const confirmations = confirmationCount({
+      createdByAgentId: bug.createdByAgentId,
+      accepts: acceptsByBug.get(bug.id) ?? [],
+      undoneIds: undoneByBug.get(bug.id) ?? new Set(),
+      bug: reviewed,
+    });
+    const triageCleared = isTriageClearedBug({
+      createdByAgentId: bug.createdByAgentId,
+      clears: clearsByBug.get(bug.id) ?? [],
+      undoneIds: undoneByBug.get(bug.id) ?? new Set(),
+      bug: reviewed,
+      revisedAt: revisedAt.get(bug.id),
+    });
+    const confirmed = isIssueConfirmed({
+      confirmationCount: confirmations,
+      confirmationsNeeded: workflows.get(bug.projectId)?.confirmationsNeeded ?? DEFAULT_PROJECT_WORKFLOW.confirmationsNeeded,
+      triageCleared,
+    });
     const stage = issueStage({ status: bug.status, voteCount: bug.voteCount, confirmed });
     if (stage) stages.set(bug.id, stage);
   }
