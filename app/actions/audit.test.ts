@@ -75,7 +75,22 @@ describe("undoAuditEventAction (#450)", () => {
     } as never);
     const result = await undoAuditEventAction(undefined, form({ auditEventId: "event-1" }));
 
-    expect(result).toEqual({ ok: false, error: "not_found" });
+    expect(result).toEqual({ ok: false, error: "No such audit event." });
+    expect(mockRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("propagates cannot_undo_own_agent message from the undo", async () => {
+    mockUndoAuditEvent.mockResolvedValue({
+      ok: false,
+      error: "cannot_undo_own_agent",
+      message: "You can't undo an action performed by your own agent.",
+    } as never);
+    const result = await undoAuditEventAction(undefined, form({ auditEventId: "event-1" }));
+
+    expect(result).toEqual({
+      ok: false,
+      error: "You can't undo an action performed by your own agent.",
+    });
     expect(mockRevalidatePath).not.toHaveBeenCalled();
   });
 });

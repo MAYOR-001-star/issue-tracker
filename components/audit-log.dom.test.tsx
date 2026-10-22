@@ -1,10 +1,15 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AuditLog, type AuditLogRow } from "./audit-log";
+
+const mockToast = vi.fn();
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => mockToast,
+}));
 
 const row = (overrides: Partial<AuditLogRow>): AuditLogRow => ({
   id: "event-1",
@@ -21,7 +26,10 @@ const row = (overrides: Partial<AuditLogRow>): AuditLogRow => ({
 });
 
 describe("AuditLog (#447)", () => {
-  beforeEach(() => cleanup());
+  beforeEach(() => {
+    cleanup();
+    mockToast.mockReset();
+  });
 
   it("loads with every row collapsed", () => {
     render(<AuditLog rows={[row({}), row({ id: "event-2", payload: { body: "secret-payload-2" } })]} />);
@@ -73,5 +81,40 @@ describe("AuditLog (#447)", () => {
   it("says when there is nothing to show", () => {
     render(<AuditLog rows={[]} />);
     expect(screen.getByText("No agent activity yet.")).toBeInTheDocument();
+  });
+
+  it("triggers onUndo and shows error toast when undo is refused (#543)", async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn().mockResolvedValue({
+      ok: false,
+      error: "You can't undo an action performed by your own agent.",
+    });
+
+    render(<AuditLog rows={[row({})]} isTenantAdmin={true} onUndo={onUndo} />);
+
+    const undoButton = screen.getByRole("button", { name: "Undo" });
+    await user.click(undoButton);
+
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(mockToast).toHaveBeenCalledWith(
+      "You can't undo an action performed by your own agent.",
+      "error",
+    );
+  });
+
+  it("triggers onUndo and shows success toast when undo succeeds (#543)", async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn().mockResolvedValue({
+      ok: true,
+      message: "Action undone.",
+    });
+
+    render(<AuditLog rows={[row({})]} isTenantAdmin={true} onUndo={onUndo} />);
+
+    const undoButton = screen.getByRole("button", { name: "Undo" });
+    await user.click(undoButton);
+
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(mockToast).toHaveBeenCalledWith("Action undone.");
   });
 });
