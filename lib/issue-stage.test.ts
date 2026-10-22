@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { PrismaClient } from "@prisma/client";
 import {
   confirmationCount,
   intakeKind,
@@ -226,7 +227,7 @@ describe("openIssueStages with triage clearance", () => {
       agentAuditEvent: {
         findMany: vi.fn().mockResolvedValue([]),
       },
-    } as any;
+    } as unknown as PrismaClient;
 
     const stages = await openIssueStages(mockDb, {});
     // Must be "reported", NOT "ready"!
@@ -296,7 +297,7 @@ describe("openIssueStages with triage clearance", () => {
       agentAuditEvent: {
         findMany: vi.fn().mockResolvedValue([]),
       },
-    } as any;
+    } as unknown as PrismaClient;
 
     const stages = await openIssueStages(mockDb, {});
     expect(stages.get("bug-1")).toBe("ready");
