@@ -10,7 +10,7 @@ Previously, the system maintained multiple overlapping conceptual layers:
 - **Projects**: Sub-tenant groupings that created redundant nested silos for tasks and keys.
 - **Categories / Platforms**: Tags representing runtime environments (Desktop, Web, Mobile).
 
-This multi-layer structure caused user confusion, fragmented issue backlogs across projects within the same team, and added unnecessary operational overhead. In practice, modern development teams operate as an unified **Organisation** working across **Platforms** (e.g., Desktop, Mobile, Web, Backend).
+This multi-layer structure caused user confusion, fragmented issue backlogs across projects within the same team, and added unnecessary operational overhead. In practice, modern development teams operate as a unified **Organisation** working across **Platforms** (e.g., Desktop, Mobile, Web, Backend).
 
 ## 2-Tier Architectural Hierarchy
 We standardize the domain model into a clean 2-tier hierarchy:
@@ -49,7 +49,7 @@ We standardize the domain model into a clean 2-tier hierarchy:
 To ensure zero downtime and 100% backwards compatibility for existing agents and API integrations:
 
 1. **Inventory of Project Responsibilities**:
-   - *Key Scoping*: Agent keys currently reference a `projectId`. These map directly to the organisation's primary project context during the transition.
+   - *Key Scoping*: Newly created keys reference a `projectId` and are restricted to that project, while existing legacy keys retain a null `projectId` and continue working tenant-wide across all projects without being remapped.
    - *Workflow Configurations*: Max active claims, silence windows, and reward rules consolidate at the Organisation level.
    - *Repository Links*: Repositories attach directly to the Organisation.
 

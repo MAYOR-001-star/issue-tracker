@@ -146,7 +146,8 @@ describe("SettingsPage resilience", () => {
     delete process.env.AGENT_PLATFORM;
   });
 
-  it("renders organisation and platforms links (#441)", async () => {
+  it("renders organisation links for regular users but hides manage platforms (#441)", async () => {
+    requireUser.mockResolvedValueOnce({ id: "user-1", name: "Ada Lovelace", email: "ada@example.com", role: "user" });
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       name: "Ada Lovelace",
       email: "ada@example.com",
@@ -169,7 +170,41 @@ describe("SettingsPage resilience", () => {
 
     const hrefs = collectHrefs(element);
     expect(hrefs).toContain("/settings/team");
-    expect(hrefs).toContain("/admin/categories");
     expect(hrefs).toContain("/tenants");
+    expect(hrefs).not.toContain("/admin/categories");
+  });
+
+  it("renders manage platforms link for admin and super_admin (#441)", async () => {
+    function collectHrefs(node: unknown, hrefs: string[] = []): string[] {
+      if (!node || typeof node !== "object") return hrefs;
+      const anyNode = node as { props?: { href?: string; children?: unknown } };
+      if (anyNode.props?.href) hrefs.push(anyNode.props.href);
+      if (Array.isArray(anyNode.props?.children)) {
+        for (const child of anyNode.props.children) collectHrefs(child, hrefs);
+      } else if (anyNode.props?.children) {
+        collectHrefs(anyNode.props.children, hrefs);
+      }
+      return hrefs;
+    }
+
+    // Admin role
+    requireUser.mockResolvedValueOnce({ id: "user-admin", name: "Admin User", email: "admin@example.com", role: "admin" });
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      name: "Admin User",
+      email: "admin@example.com",
+    } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    const adminElement = await SettingsPage();
+    expect(collectHrefs(adminElement)).toContain("/admin/categories");
+
+    // Super admin role
+    requireUser.mockResolvedValueOnce({ id: "user-super", name: "Super Admin", email: "super@example.com", role: "super_admin" });
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      name: "Super Admin",
+      email: "super@example.com",
+    } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    const superAdminElement = await SettingsPage();
+    expect(collectHrefs(superAdminElement)).toContain("/admin/categories");
   });
 });

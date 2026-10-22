@@ -6,7 +6,7 @@ The Zedu Amp dashboard (`https://metrics.zedu.chat/dashboard`) is a reference fo
 
 | Word | Means | Does not mean |
 | --- | --- | --- |
-| Organisation / Workspace | The top-level team and tenant boundary. Standardized term for the organization. | A single product or platform. |
+| Organisation / Workspace | The top-level team and tenant boundary. Standardized term for the organisation. | A single product or platform. |
 | Platform | Target environment for categorizing issues (e.g. Desktop, Mobile, Web, Backend). Replaces separate Projects hierarchy. | A distinct team or workspace. |
 | Project | Legacy entity being flattened into Organisation and Platforms. | A standalone team silo. |
 

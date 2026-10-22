@@ -174,9 +174,11 @@ export default async function SettingsPage() {
           <Link href="/settings/team" className="font-medium text-teal-700 hover:underline">
             Organisation members
           </Link>
-          <Link href="/admin/categories" className="font-medium text-teal-700 hover:underline">
-            Manage platforms
-          </Link>
+          {user.role === "admin" || user.role === "super_admin" ? (
+            <Link href="/admin/categories" className="font-medium text-teal-700 hover:underline">
+              Manage platforms
+            </Link>
+          ) : null}
           <Link href="/tenants" className="font-medium text-teal-700 hover:underline">
             Switch organisation
           </Link>
