@@ -2,13 +2,13 @@
 
 The Zedu Amp dashboard (`https://metrics.zedu.chat/dashboard`) is a reference for tone. It is not a skin to copy. Ziki already has a light theme and a dark theme. Both stay. Teal stays the brand accent. Do not hard-code Amp’s hex colors onto components.
 
-## Words that do not change
+## Hierarchy and terminology
 
 | Word | Means | Does not mean |
 | --- | --- | --- |
-| Workspace | The team. In code this is a Tenant. | A product, or Amp’s marketing workspace. |
-| Project | One product inside a workspace. | A platform label, and not the whole team. |
-| Platform | An issue label such as Web or Mobile. | A product. |
+| Organisation / Workspace | The top-level team and tenant boundary. Standardized term for the organization. | A single product or platform. |
+| Platform | Target environment for categorizing issues (e.g. Desktop, Mobile, Web, Backend). Replaces separate Projects hierarchy. | A distinct team or workspace. |
+| Project | Legacy entity being flattened into Organisation and Platforms. | A standalone team silo. |
 
 The Ziki mark stays the Ziki mark. Do not swap in the Amp bolt.
 

@@ -511,6 +511,14 @@ export function AppHeader({
                       Dashboard
                     </MenuLink>
                   ) : null}
+                  {isAdmin(effectiveRole) ? (
+                    <MenuLink
+                      href="/admin/categories"
+                      active={isNavItemActive(pathname, "/admin/categories")}
+                    >
+                      Platforms
+                    </MenuLink>
+                  ) : null}
                   <MenuLink
                     href={SWITCH_TENANT_LINK.href}
                     active={isNavItemActive(pathname, SWITCH_TENANT_LINK.href)}
@@ -617,6 +625,15 @@ export function AppHeader({
                 large
               >
                 Dashboard
+              </MenuLink>
+            ) : null}
+            {isAdmin(effectiveRole) ? (
+              <MenuLink
+                href="/admin/categories"
+                active={isNavItemActive(pathname, "/admin/categories")}
+                large
+              >
+                Platforms
               </MenuLink>
             ) : null}
             <MenuLink

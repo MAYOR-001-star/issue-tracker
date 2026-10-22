@@ -165,14 +165,20 @@ export default async function SettingsPage() {
       ) : null}
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Team
+          Organisation &amp; Platforms
         </h2>
         <p className="mt-2 text-sm text-slate-600">
-          Workspace members and their active agents (moved out of the nav bar).
+          Manage your organisation members, switch organisations, and configure work platforms (Desktop, Web, Mobile).
         </p>
         <div className="mt-3 flex flex-wrap gap-4 text-sm">
           <Link href="/settings/team" className="font-medium text-teal-700 hover:underline">
-            View team
+            Organisation members
+          </Link>
+          <Link href="/admin/categories" className="font-medium text-teal-700 hover:underline">
+            Manage platforms
+          </Link>
+          <Link href="/tenants" className="font-medium text-teal-700 hover:underline">
+            Switch organisation
           </Link>
         </div>
       </section>

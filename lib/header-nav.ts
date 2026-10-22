@@ -15,7 +15,7 @@ export type HeaderNavItem = {
   children?: HeaderNavSubItem[];
 };
 
-/** #444: pick another tenant, create one, or accept an invite. */
+/** #444, #441: pick another organisation/workspace, create one, or accept an invite. */
 export const SWITCH_TENANT_LINK: HeaderNavItem = { href: "/tenants", label: "Switch workspace" };
 
 /**
