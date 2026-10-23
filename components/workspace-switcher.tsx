@@ -32,10 +32,11 @@ export function WorkspaceSwitcher({
   activeTenantId: string | null;
   className?: string;
   fullWidth?: boolean;
-  /** "chrome" paints the control for the navy app header. */
-  tone?: "default" | "chrome";
+  /** "chrome" paints the control for navy chrome. "sidebar" is the tall switcher in the app sidebar. */
+  tone?: "default" | "chrome" | "sidebar";
 }) {
-  const chrome = tone === "chrome";
+  const chrome = tone === "chrome" || tone === "sidebar";
+  const sidebar = tone === "sidebar";
   const listId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -94,7 +95,7 @@ export function WorkspaceSwitcher({
   }
 
   return (
-    <div ref={rootRef} className={`relative ${fullWidth ? "w-full" : "w-max max-w-40"} ${className}`}>
+    <div ref={rootRef} className={`relative ${fullWidth || sidebar ? "w-full" : "w-max max-w-40"} ${className}`}>
       <form ref={formRef} action={selectTenantAction}>
         <input type="hidden" name="tenantId" defaultValue={selected.id} />
         <button
@@ -103,10 +104,12 @@ export function WorkspaceSwitcher({
           aria-expanded={open}
           aria-controls={listId}
           onClick={() => setOpen((current) => !current)}
-          className={`inline-flex h-9 max-w-full items-center gap-2 rounded-full border py-0 pl-3 pr-2 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 ${
-            chrome
-              ? "border-surface-border bg-white/[0.04] text-sm text-porcelain hover:bg-white/[0.08]"
-              : "border-slate-200 bg-white text-xs text-slate-800 hover:bg-slate-50"
+          className={`inline-flex max-w-full items-center gap-2 border font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-tint focus-visible:ring-offset-2 focus-visible:ring-offset-deep-ocean ${
+            sidebar
+              ? "h-12 w-full justify-between rounded-[14px] border-[#34507F] bg-blue-slate px-3 text-sm text-white"
+              : chrome
+                ? "h-9 rounded-full border-surface-border bg-white/[0.04] py-0 pl-3 pr-2 text-sm text-porcelain hover:bg-white/[0.08]"
+                : "h-9 rounded-full border-slate-200 bg-card py-0 pl-3 pr-2 text-xs text-slate-800 hover:bg-slate-50"
           } ${fullWidth ? "w-full justify-between" : ""}`}
         >
           <span className="sr-only">Active workspace, </span>
@@ -128,7 +131,7 @@ export function WorkspaceSwitcher({
             role="listbox"
             aria-label="Workspaces"
             className={`absolute left-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border p-1 shadow-sm ${
-              chrome ? "border-surface-border bg-[#142343]" : "border-slate-200 bg-white"
+              chrome ? "border-surface-border bg-[#142343]" : "border-slate-200 bg-card"
             } ${fullWidth ? "w-full" : "w-max min-w-full max-w-56"}`}
           >
             {workspaces.map((workspace) => {

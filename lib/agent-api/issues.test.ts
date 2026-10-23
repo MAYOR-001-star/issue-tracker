@@ -288,7 +288,7 @@ describe("agent issue reads", () => {
     expect(db.bug.findMany.mock.lastCall?.[0].where).toMatchObject({ areaId: null });
   });
 
-  it("rejects absent/foreign projects, invalid enums, and malformed cursors", async () => {
+  it("rejects absent/foreign projects and malformed cursors", async () => {
     // #563: a missing projectId names the parameter instead of a raw validation dump.
     const missing = await list(request("GET", undefined, ""));
     expect(missing.status).toBe(400);
@@ -297,9 +297,22 @@ describe("agent issue reads", () => {
     db.project.findFirst.mockResolvedValueOnce(null);
     expect((await list(request())).status).toBe(404);
     expect(db.project.findFirst).toHaveBeenCalledWith({ where: { id: "project-a", tenantId: "tenant-a" }, select: { id: true } });
-    expect((await list(request("GET", undefined, "?projectId=project-a&status=unknown"))).status).toBe(422);
-    expect((await list(request("GET", undefined, "?projectId=project-a&stage=queued"))).status).toBe(422);
     expect((await list(request("GET", undefined, "?projectId=project-a&cursor=bad"))).status).toBe(400);
+    expect(db.bug.findMany).not.toHaveBeenCalled();
+  });
+
+  it("names invalid status, severity, stage and assignee filters (#406)", async () => {
+    const cases: [string, string][] = [
+      ["status=unknown", "status must be one of open, in_progress, resolved, closed."],
+      ["severity=urgent", "severity must be one of low, medium, high, critical."],
+      ["stage=queued", "stage must be one of reported, confirmed, ready."],
+      ["assignee=%20", 'assignee must be "none" or a valid user id.'],
+    ];
+    for (const [query, error] of cases) {
+      const response = await list(request("GET", undefined, `?projectId=project-a&${query}`));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error });
+    }
     expect(db.bug.findMany).not.toHaveBeenCalled();
   });
 
@@ -795,7 +808,16 @@ describe("issue read confirmation", () => {
     const body = await readIssue();
     expect(body.confirmed).toBe(true);
     expect(body.intake).toBe("issue");
-    expect(body).not.toHaveProperty("voteCount");
+  });
+
+  it("shows the upvote count and the threshold an idea needs (#463)", async () => {
+    db.bug.findFirst.mockResolvedValue({ ...issue, status: "open", voteCount: 2 });
+    db.issueValidation.findMany.mockResolvedValue([accept("v1", "r1", "rob"), accept("v2", "r2", "sam")]);
+    const body = (await readIssue()) as unknown as { voteCount: number; voteThreshold: number; intake: string };
+    expect(body.voteCount).toBe(2);
+    expect(body.voteThreshold).toBe(3);
+    expect(body.intake).toBe("idea");
+    expect(db.bug.findFirst.mock.calls.at(-1)?.[0]?.select.voteCount).toBe(true);
   });
 
   it("does not confirm when both accepts belong to the same owner", async () => {
@@ -827,5 +849,10 @@ describe("issue read confirmation", () => {
     const body = await response.json();
     expect(body.items[0]).not.toHaveProperty("confirmed");
     expect(body.items[0]).not.toHaveProperty("validations");
+  });
+
+  it("selects the upvote count for each listed issue (#463)", async () => {
+    await list(request());
+    expect(db.bug.findMany.mock.calls.at(-1)?.[0]?.select.voteCount).toBe(true);
   });
 });

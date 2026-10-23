@@ -6,11 +6,11 @@ import { reviewerConflict, reviewerCreditConflict, type ReviewedBug } from "@/li
 import { hasLevel } from "@/lib/agents/levels";
 import type { AgentContext } from "@/lib/agents/require-agent";
 import { award, type PointAward } from "@/lib/points/award";
-import { confirmationReviewerSourceKey, CONFIRMATION_REVIEWER_POINTS, DUPLICATE_MARKER_POINTS, duplicateMarkerSourceKey, pointSourceKey, reviewerPointsAt, TRIAGER_CLEAR_POINTS, triagerClearSourceKey } from "@/lib/points/rules";
+import { confirmationReviewerSourceKey, duplicateMarkerSourceKey, pointSourceKey, reviewerPointsAt, triagerClearSourceKey } from "@/lib/points/rules";
 import {
   calculateReporterPoints,
-  getProjectRewardConfig,
 } from "@/lib/points/project-rewards";
+import { getPlatformRewardConfig, getProjectRewardConfig } from "@/lib/points/platform-rewards";
 import { severities } from "@/lib/validations/issue";
 import { publish } from "@/lib/agent-api/events";
 import { promoteEarnedReviewer } from "@/lib/agents/promotion";
@@ -153,6 +153,25 @@ async function latestRevisionAt(db: Db, bug: LoadedBug): Promise<Date | null> {
     select: { editedAt: true },
   });
   return revision?.editedAt ?? null;
+}
+
+/**
+ * This agent's validation of `kind` on `bug`, when it was made before the
+ * issue's latest edit and so no longer counts (#493). Null otherwise.
+ */
+async function staleValidationOf(
+  db: Db,
+  bug: LoadedBug,
+  agentId: string,
+  kind: ValidationKind,
+): Promise<{ id: string } | null> {
+  const latestRevision = await latestRevisionAt(db, bug);
+  if (!latestRevision) return null;
+  const existing = await db.issueValidation.findFirst({
+    where: { bugId: bug.id, agentId, kind },
+    select: { id: true, createdAt: true },
+  });
+  return existing && existing.createdAt <= latestRevision ? { id: existing.id } : null;
 }
 
 /**
@@ -299,6 +318,7 @@ export async function standingValidationAwards(db: Db, bugId: string): Promise<P
   const bug = await db.bug.findUnique({ where: { id: bugId }, select: reviewedBugSelect });
   if (!bug) return [];
 
+  const platform = await getPlatformRewardConfig(db);
   const entries: PointAward[] = [];
 
   // Confirming reviewers are skipped entirely once a duplicate marker stands,
@@ -311,7 +331,7 @@ export async function standingValidationAwards(db: Db, bugId: string): Promise<P
         userId,
         bugId,
         role: "reviewer",
-        points: reviewerPointsAt(index, CONFIRMATION_REVIEWER_POINTS),
+        points: reviewerPointsAt(index, platform.confirmationReviewer),
         sourceKey: confirmationReviewerSourceKey(bugId, userId),
       });
     });
@@ -356,7 +376,7 @@ export async function standingValidationAwards(db: Db, bugId: string): Promise<P
         userId: v.onBehalfOfUserId,
         bugId,
         role: "triager",
-        points: TRIAGER_CLEAR_POINTS,
+        points: platform.triagerClear,
         sourceKey: triagerClearSourceKey(bugId, v.onBehalfOfUserId),
       });
     } else if (v.verdict === "accept") {
@@ -365,7 +385,7 @@ export async function standingValidationAwards(db: Db, bugId: string): Promise<P
         userId: v.onBehalfOfUserId,
         bugId,
         role: "triager",
-        points: DUPLICATE_MARKER_POINTS,
+        points: platform.duplicateMarker,
         sourceKey: duplicateMarkerSourceKey(bugId, v.onBehalfOfUserId),
       });
     }
@@ -515,19 +535,27 @@ export async function submitValidation(
         (await countedConfirmations(tx, bug)) >= confirmationsNeeded &&
         (await isTriageCleared(tx, bug));
 
+      const fields = {
+        onBehalfOfUserId,
+        verdict: body.verdict,
+        notes: body.notes || null,
+        duplicateOfId: body.duplicateOfId ?? null,
+        severity: setsSeverity,
+        previousSeverity: setsSeverity ? bug.severity : null,
+      };
+      const validationSelect = { id: true, kind: true, verdict: true, severity: true, duplicateOfId: true, onBehalfOfUserId: true } as const;
+      // #493: an edit voids earlier validations, and an agent has one row per
+      // issue and kind. When this agent's row predates the latest edit, the
+      // re-review replaces it instead of being refused forever. A row made
+      // after the edit still gets 409. The stale row is deleted, not updated,
+      // so the replacement gets a new id: an undo of the old review (which
+      // keys on its validationId) can neither hide nor reverse the new one.
+      // Its `issue.validated` audit event stays as history.
+      const stale = await staleValidationOf(tx, bug, agent.agentId, body.kind);
+      if (stale) await tx.issueValidation.delete({ where: { id: stale.id } });
       const validation = await tx.issueValidation.create({
-        data: {
-          bugId: bug.id,
-          agentId: agent.agentId,
-          onBehalfOfUserId,
-          kind: body.kind,
-          verdict: body.verdict,
-          notes: body.notes || null,
-          duplicateOfId: body.duplicateOfId ?? null,
-          severity: setsSeverity,
-          previousSeverity: setsSeverity ? bug.severity : null,
-        },
-        select: { id: true, kind: true, verdict: true, severity: true, duplicateOfId: true, onBehalfOfUserId: true },
+        data: { bugId: bug.id, agentId: agent.agentId, kind: body.kind, ...fields },
+        select: validationSelect,
       });
       if (escalatesSeverity) {
         await tx.bug.update({ where: { id: bug.id }, data: { severity: setsSeverity! } });
@@ -538,9 +566,10 @@ export async function submitValidation(
         (await isTriageCleared(tx, bug));
       const newlyConfirmed = confirmed && !wasConfirmed;
       const duplicate = await isDuplicate(tx, bug);
+      const platform = await getPlatformRewardConfig(tx);
       if (body.kind === "duplicate") {
-        // The duplicate pass pays its own role (#428): 1 for clearing a report
-        // as not a duplicate (triage permission required), 5 for marking a real one.
+        // The duplicate pass pays its own role (#428): clear vs mark amounts
+        // come from platform settings (hard-coded fallback).
         const sourceKey =
           body.verdict === "reject" && hasLevel(agent.level, "triager")
             ? triagerClearSourceKey(bug.id, onBehalfOfUserId)
@@ -553,7 +582,7 @@ export async function submitValidation(
             userId: onBehalfOfUserId,
             bugId: bug.id,
             role: "triager",
-            points: body.verdict === "reject" ? TRIAGER_CLEAR_POINTS : DUPLICATE_MARKER_POINTS,
+            points: body.verdict === "reject" ? platform.triagerClear : platform.duplicateMarker,
             sourceKey,
           });
         }
@@ -567,7 +596,7 @@ export async function submitValidation(
             userId: onBehalfOfUserId,
             bugId: bug.id,
             role: "reviewer",
-            points: reviewerPointsAt(index, CONFIRMATION_REVIEWER_POINTS),
+            points: reviewerPointsAt(index, platform.confirmationReviewer),
             sourceKey: confirmationReviewerSourceKey(bug.id, onBehalfOfUserId),
           });
         }

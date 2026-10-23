@@ -13,6 +13,7 @@ import { parsePlatformFilter, platformFilterWhere } from "@/lib/platform-filter"
 import { boundSearchTerm, escapeSearchQuery } from "@/lib/search";
 import { parseProjectAreaFilter, projectAreaFilterWhere } from "@/lib/project-area-filter";
 import { intakeKind, openIssueStages, type IssueStage } from "@/lib/issue-stage";
+import { WORK_READINESS_VOTE_THRESHOLD } from "@/lib/ticket-assignment";
 import { parseIssueRef } from "@/lib/issue-ref";
 import { createIssueWithPolicy, cursorOrderBy, cursorWhere, decodeCursor, hashCreateRequest, pageSize, toPage, type IssueCursor } from "@/lib/agent-api/create-policy";
 import { createdSummary, commentedSummary, commentPreview } from "@/lib/activity-log";
@@ -33,6 +34,16 @@ export class IssueApiError extends Error {
 
 const idSchema = z.string().trim().min(1).max(191);
 const stageSchema = z.enum(["reported", "confirmed", "ready"]);
+
+/** #406: name the bad query parameter instead of returning a pathless Zod dump. */
+function enumFilter<T extends string>(name: string, raw: string | null, allowed: readonly T[]): T | null {
+  if (!raw) return null;
+  if (!(allowed as readonly string[]).includes(raw)) {
+    throw new IssueApiError(400, `${name} must be one of ${allowed.join(", ")}.`);
+  }
+  return raw as T;
+}
+
 /** Files uploaded with POST /api/v1/attachments, linked on save (#645). */
 const attachmentIdsSchema = z.array(idSchema).max(MAX_ATTACHMENTS_PER_ITEM).optional();
 export const createSchema = createBugSchema.pick({ title: true, description: true, categoryId: true, areaId: true, proofLinks: true })
@@ -125,6 +136,8 @@ export const issueSelect = {
   id: true, number: true, title: true, description: true, status: true, severity: true,
   categoryId: true, typeId: true, reporterId: true, assigneeId: true, beneficiaryUserId: true,
   createdByAgentId: true, projectId: true, areaId: true, createdAt: true, updatedAt: true, proofLinks: true,
+  // #463: agents can see how close an idea is to the upvote gate.
+  voteCount: true,
   area: { select: { id: true, name: true, slug: true } },
 } satisfies Prisma.BugSelect;
 
@@ -141,11 +154,19 @@ export function requireKnownFilter(name: "platform" | "area", raw: string | null
 }
 
 export async function listAgentIssues(scope: Scope, params: URLSearchParams) {
-  const status = params.get("status");
-  const severity = params.get("severity");
+  const status = enumFilter("status", params.get("status"), statusSchema.options);
+  const severity = enumFilter("severity", params.get("severity"), severitySchema.options);
   const assignee = params.get("assignee");
-  const stageRaw = params.get("stage");
-  const stage: IssueStage | null = stageRaw ? stageSchema.parse(stageRaw) : null;
+  const stage: IssueStage | null = enumFilter("stage", params.get("stage"), stageSchema.options);
+  let assigneeId: string | null | undefined;
+  if (assignee) {
+    if (assignee === "none") assigneeId = null;
+    else {
+      const parsed = idSchema.safeParse(assignee);
+      if (!parsed.success) throw new IssueApiError(400, 'assignee must be "none" or a valid user id.');
+      assigneeId = parsed.data;
+    }
+  }
   const platforms = await prisma.category.findMany({
     where: { tenantId: scope.tenantId },
     select: { id: true, name: true },
@@ -168,9 +189,9 @@ export async function listAgentIssues(scope: Scope, params: URLSearchParams) {
     : {};
   const filtered: Prisma.BugWhereInput = {
     ...scope, isDeleted: false, ...search,
-    ...(status ? { status: statusSchema.parse(status) } : {}),
-    ...(severity ? { severity: severitySchema.parse(severity) } : {}),
-    ...(assignee ? { assigneeId: assignee === "none" ? null : idSchema.parse(assignee) } : {}),
+    ...(status ? { status } : {}),
+    ...(severity ? { severity } : {}),
+    ...(assigneeId !== undefined ? { assigneeId } : {}),
     ...platformFilterWhere(requireKnownFilter("platform", params.get("platform"), parsePlatformFilter(params.get("platform"), platforms))),
     ...projectAreaFilterWhere(requireKnownFilter("area", requestedArea, parseProjectAreaFilter(requestedArea, areas))),
   };
@@ -218,11 +239,11 @@ export async function readAgentIssue(scope: Scope, id: string) {
   });
   if (!issue) throw new IssueApiError(404, "Issue not found.");
   const confirmed = await isConfirmed(issue.id);
-  const { voteCount, ...publicIssue } = issue;
   return {
-    ...publicIssue,
+    ...issue,
+    voteThreshold: WORK_READINESS_VOTE_THRESHOLD,
     confirmed,
-    intake: intakeKind({ status: issue.status, voteCount, confirmed }),
+    intake: intakeKind({ status: issue.status, voteCount: issue.voteCount, confirmed }),
   };
 }
 
