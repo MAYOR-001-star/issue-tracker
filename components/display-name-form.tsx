@@ -30,7 +30,7 @@ export function DisplayNameForm({
         setName(next.name);
         setSavedName(next.name);
         setJustSaved(true);
-      } else {
+      } else if (!next.ok) {
         setJustSaved(false);
       }
       return next;
