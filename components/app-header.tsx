@@ -326,7 +326,7 @@ export function AppHeader({
             breaks the chips onto rows (no sideways scroll at 360px or 768px).
             From lg up it keeps shrink-0 so the account controls are never
             squeezed. */}
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3 lg:shrink-0">
+        <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:gap-3 lg:shrink-0">
           <PointsChip
             points={points}
             solvedTasks={solvedTasks}

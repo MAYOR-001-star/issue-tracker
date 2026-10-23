@@ -128,14 +128,14 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zk-bg lg:flex-row">
+    <div className="flex min-h-screen flex-col overflow-x-clip bg-zk-bg lg:flex-row">
       <SkipLink />
       <AppSidebar
         issueCount={issueCount}
         workspaces={workspaces}
         activeTenantId={activeTenantId}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 max-w-full flex-1 flex-col overflow-x-clip">
         <AppHeader
           userName={user.name ?? user.email}
           userImage={user.image}
