@@ -26,6 +26,15 @@ type AttachmentsByComment = Record<string, AttachmentView[]>;
 /** Each author's role in the issue's organization, by user id (#489). */
 type OrganizationRoles = Record<string, OrganizationRole>;
 
+type ViewerProps = {
+  currentUserId?: string;
+  currentUserRole?: AppRole | null;
+  /** Owner, admin, or site super admin of this issue's organization. */
+  tenantAdmin?: boolean;
+  /** Deleted issues: show comments but no reply, edit, delete or new comment. */
+  readOnly?: boolean;
+};
+
 type UserOption = { id: string; name: string };
 
 const commentTypeVisual: Record<

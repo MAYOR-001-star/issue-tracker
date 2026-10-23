@@ -67,7 +67,7 @@ describe("SettingsPage resilience", () => {
       keyboardShortcuts: true,
     } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
 
-    const element = await SettingsPage();
+    const element = await SettingsPage({});
     expect(element).toBeDefined();
     expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
   });
@@ -80,7 +80,7 @@ describe("SettingsPage resilience", () => {
         email: "ada@example.com",
       } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
 
-    const element = await SettingsPage();
+    const element = await SettingsPage({});
     expect(element).toBeDefined();
     expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
   });
@@ -152,7 +152,7 @@ describe("SettingsPage resilience", () => {
       email: "ada@example.com",
     } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
 
-    const element = await SettingsPage();
+    const element = await SettingsPage({});
     expect(element).toBeDefined();
 
     function collectHrefs(node: unknown, hrefs: string[] = []): string[] {
@@ -193,7 +193,7 @@ describe("SettingsPage resilience", () => {
       email: "admin@example.com",
     } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
 
-    const adminElement = await SettingsPage();
+    const adminElement = await SettingsPage({});
     expect(collectHrefs(adminElement)).toContain("/admin/categories");
 
     // Super admin role
@@ -203,7 +203,7 @@ describe("SettingsPage resilience", () => {
       email: "super@example.com",
     } as unknown as Awaited<ReturnType<typeof prisma.user.findUnique>>);
 
-    const superAdminElement = await SettingsPage();
+    const superAdminElement = await SettingsPage({});
     expect(collectHrefs(superAdminElement)).toContain("/admin/categories");
   });
 });
